@@ -4,7 +4,7 @@ import CoreServices
 
 // MARK: - TextViewAttachmentDelegate
 //
-public protocol TextViewAttachmentDelegate: class {
+public protocol TextViewAttachmentDelegate: AnyObject {
 
     /// This method requests from the delegate the image at the specified URL.
     ///
@@ -72,7 +72,7 @@ public protocol TextViewAttachmentDelegate: class {
 
 // MARK: - TextViewAttachmentImageProvider
 //
-public protocol TextViewAttachmentImageProvider: class {
+public protocol TextViewAttachmentImageProvider: AnyObject {
 
     /// Indicates whether the current Attachment Renderer supports a given NSTextAttachment instance, or not.
     ///
@@ -110,7 +110,7 @@ public protocol TextViewAttachmentImageProvider: class {
 
 // MARK: - TextViewFormattingDelegate
 //
-public protocol TextViewFormattingDelegate: class {
+public protocol TextViewFormattingDelegate: AnyObject {
 
     /// Called a text view command toggled a style.
     ///
@@ -121,7 +121,7 @@ public protocol TextViewFormattingDelegate: class {
 
 // MARK: - TextViewPasteboardDelegate
 //
-public protocol TextViewPasteboardDelegate: class {
+public protocol TextViewPasteboardDelegate: AnyObject {
 
     /// Called by the TextView when it's attempting to paste the contents of the pasteboard.
     ///
@@ -178,6 +178,10 @@ open class TextView: UITextView {
     ///
     open var shouldNotifyOfNonUserChanges = true
 
+    /// If this is true the typing attributes will be recalculated when deleting backward
+    ///
+    open var shouldRecalculateTypingAttributesOnDeleteBackward = true
+
     // MARK: - Customizable Input VC
     
     private var customInputViewController: UIInputViewController?
@@ -223,6 +227,12 @@ open class TextView: UITextView {
     // MARK: - Properties: Text Lists
 
     var maximumListIndentationLevels = 7
+    
+    // MARK: - Properties: Blockquotes
+    
+    /// The max levels of quote indentation allowed
+    /// Default is 9
+    public var maximumBlockquoteIndentationLevels = 9
 
     // MARK: - Properties: UI Defaults
 
@@ -249,15 +259,23 @@ open class TextView: UITextView {
     }
 
     open lazy var defaultTextColor: UIColor? = {
-        #if XCODE11
         if #available(iOS 13.0, *) {
             return UIColor.label
         } else {
             return UIColor.darkText
-        }
-        #endif
-        return UIColor.darkText
+        }        
     }()
+
+    open override var textColor: UIColor? {
+        set {
+            super.textColor = newValue
+            defaultTextColor = newValue
+        }
+
+        get {
+            return super.textColor
+        }
+    }
 
     // MARK: - Plugin Loading
     
@@ -284,17 +302,18 @@ open class TextView: UITextView {
 
     // MARK: - Apparance Properties
 
-    /// Blockquote Blocks Border Color.
+    
+    /// Blockquote Blocks Border and Text Colors
     ///
-    @objc dynamic public var blockquoteBorderColor: UIColor? {
+    @objc dynamic public var blockquoteBorderColors: [UIColor] {
         get {
-            return layout.blockquoteBorderColor
+            return layout.blockquoteBorderColors
         }
         set {
-            layout.blockquoteBorderColor = newValue
+            layout.blockquoteBorderColors = newValue
         }
     }
-
+    
     /// Blockquote Blocks Background Color.
     ///
     @objc dynamic public var blockquoteBackgroundColor: UIColor? {
@@ -306,7 +325,13 @@ open class TextView: UITextView {
         }
     }
 
-
+    public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        if #available(iOS 13.0, *) {
+            if let previous = previousTraitCollection, previous.hasDifferentColorAppearance(comparedTo: traitCollection) {
+                self.refreshMediaAttachments()
+            }
+        }
+    }
     /// Blockquote Blocks Background Width.
     ///
     @objc dynamic public var blockquoteBorderWidth: CGFloat {
@@ -530,41 +555,108 @@ open class TextView: UITextView {
     }
 
     @objc func handleShiftTab(command: UIKeyCommand) {
-        guard let list = TextListFormatter.lists(in: typingAttributes).last else {
-            return
-        }
-
-        let formatter = TextListFormatter(style: list.style, placeholderAttributes: nil, increaseDepth: true)
-        let liFormatter = LiFormatter(placeholderAttributes: nil)
-        let targetRange = formatter.applicationRange(for: selectedRange, in: storage)
-
-        performUndoable(at: targetRange) {
-            let finalRange = formatter.removeAttributes(from: storage, at: targetRange)
-            liFormatter.removeAttributes(from: storage, at: targetRange)
-            typingAttributes = textStorage.attributes(at: targetRange.location, effectiveRange: nil)
-            return finalRange
-        }
+        decreaseIndent()
     }
 
     @objc func handleTab(command: UIKeyCommand) {
+        increaseIndent()
+    }
+
+    // MARK: - General Indentation
+
+    /// Increases the indentation of the selected range
+    open func increaseIndent() {
         let lists = TextListFormatter.lists(in: typingAttributes)
-        guard let list = lists.last, lists.count < maximumListIndentationLevels else {
+        let quotes = BlockquoteFormatter.blockquotes(in: typingAttributes)
+
+        if let list = lists.last, lists.count < maximumListIndentationLevels {
+            indent(list: list)
+        } else if let quote = quotes.last, quotes.count < maximumBlockquoteIndentationLevels {
+            indent(blockquote: quote)
+        } else {
             insertText(String(.tab))
-            return
         }
+    }
+    
+    /// Decreases the indentation of the selected range
+    open func decreaseIndent() {
+        let lists = TextListFormatter.lists(in: typingAttributes)
+        let quotes = BlockquoteFormatter.blockquotes(in: typingAttributes)
 
-        let formatter = TextListFormatter(style: list.style, placeholderAttributes: nil, increaseDepth: true)
-        let liFormatter = LiFormatter(placeholderAttributes: nil)
-        let targetRange = formatter.applicationRange(for: selectedRange, in: storage)
-
-        performUndoable(at: targetRange) { 
-            let finalRange = formatter.applyAttributes(to: storage, at: targetRange)
-            liFormatter.applyAttributes(to: storage, at: targetRange)
-            typingAttributes = textStorage.attributes(at: targetRange.location, effectiveRange: nil)
-            return finalRange
+        if let list = lists.last {
+            indent(list: list, increase: false)
+        } else if let quote = quotes.last {
+            indent(blockquote: quote, increase: false)
         }
     }
 
+    // MARK: - Text List indent methods
+    
+    private func indent(list: TextList, increase: Bool = true) {
+        let formatter = TextListFormatter(style: list.style, placeholderAttributes: nil, increaseDepth: true)
+        let li = LiFormatter(placeholderAttributes: nil)
+
+        let targetRange = formatter.applicationRange(for: selectedRange, in: storage)
+
+        performUndoable(at: targetRange) {
+            let finalRange: NSRange
+            if increase {
+                finalRange = increaseIndent(listFormatter: formatter, liFormatter: li, targetRange: targetRange)
+            } else {
+                finalRange = decreaseIndent(listFormatter: formatter, liFormatter: li, targetRange: targetRange)
+            }
+            typingAttributes = textStorage.attributes(at: targetRange.location, effectiveRange: nil)
+            return finalRange
+        }
+
+    }
+    
+    // MARK: Text List increase or decrease indentation
+    private func increaseIndent(listFormatter: TextListFormatter, liFormatter: LiFormatter, targetRange: NSRange) -> NSRange {
+        let finalRange = listFormatter.applyAttributes(to: storage, at: targetRange)
+        liFormatter.applyAttributes(to: storage, at: targetRange)
+        
+        return finalRange
+    }
+    
+    private func decreaseIndent(listFormatter: TextListFormatter, liFormatter: LiFormatter, targetRange: NSRange) -> NSRange {
+        let finalRange = listFormatter.removeAttributes(from: storage, at: targetRange)
+        liFormatter.removeAttributes(from: storage, at: targetRange)
+        
+        return finalRange
+    }
+    
+    
+    // MARK: - Blockquote indent methods
+    
+    private func indent(blockquote: Blockquote, increase: Bool = true) {
+        let formatter = BlockquoteFormatter(placeholderAttributes: typingAttributes, increaseDepth: true)
+        let targetRange = formatter.applicationRange(for: selectedRange, in: storage)
+
+        performUndoable(at: targetRange) {
+            let finalRange: NSRange
+            if increase {
+                finalRange = increaseIndent(quoteFormatter: formatter, targetRange: targetRange)
+            } else {
+                finalRange = decreaseIndent(quoteFormatter: formatter, targetRange: targetRange)
+            }
+            typingAttributes = textStorage.attributes(at: targetRange.location, effectiveRange: nil)
+            return finalRange
+        }
+
+    }
+
+    // MARK: Blockquote increase or decrease indentation
+    private func increaseIndent(quoteFormatter: BlockquoteFormatter, targetRange: NSRange) -> NSRange {
+        let finalRange = quoteFormatter.applyAttributes(to: storage, at: targetRange)
+        return finalRange
+    }
+    
+    private func decreaseIndent(quoteFormatter: BlockquoteFormatter, targetRange: NSRange) -> NSRange {
+        let finalRange = quoteFormatter.removeAttributes(from: storage, at: targetRange)
+        return finalRange
+    }
+    
 
     // MARK: - Pasteboard Helpers
 
@@ -648,7 +740,9 @@ open class TextView: UITextView {
         evaluateRemovalOfSingleLineParagraphAttributesAfterSelectionChange()
         ensureRemovalOfParagraphAttributesWhenPressingBackspaceAndEmptyingTheDocument()
         ensureCursorRedraw(afterEditing: deletedString.string)
-        recalculateTypingAttributes()
+        if shouldRecalculateTypingAttributesOnDeleteBackward {
+            recalculateTypingAttributes()
+        }
         notifyTextViewDidChange()
     }
 
@@ -748,7 +842,7 @@ open class TextView: UITextView {
     // MARK: - Getting format identifiers
 
     private static let formatterMap: [FormattingIdentifier: AttributeFormatter] = [
-        .bold: BoldFormatter(),
+        .bold: Configuration.defaultBoldFormatter,
         .italic: ItalicFormatter(),
         .underline: SpanUnderlineFormatter(),
         .strikethrough: StrikethroughFormatter(),
@@ -763,7 +857,8 @@ open class TextView: UITextView {
         .header5: HeaderFormatter(headerLevel: .h5),
         .header6: HeaderFormatter(headerLevel: .h6),
         .p: HTMLParagraphFormatter(),
-        .code: CodeFormatter()
+        .code: CodeFormatter(),
+        .mark: MarkFormatter()
     ]
 
     /// Get a list of format identifiers spanning the specified range as a String array.
@@ -918,7 +1013,7 @@ open class TextView: UITextView {
     /// - Parameter range: The NSRange to edit.
     ///
     open func toggleBold(range: NSRange) {
-        let formatter = BoldFormatter()
+        let formatter = Configuration.defaultBoldFormatter
         toggle(formatter: formatter, atRange: range)
     }
 
@@ -987,6 +1082,7 @@ open class TextView: UITextView {
         ensureInsertionOfEndOfLineForEmptyParagraphAtEndOfFile(forApplicationRange: range)
 
         let formatter = BlockquoteFormatter(placeholderAttributes: typingAttributes)
+        
         toggle(formatter: formatter, atRange: range)
         
         let citeFormatter = CiteFormatter()
@@ -1013,8 +1109,12 @@ open class TextView: UITextView {
         toggle(formatter: formatter, atRange: range)
 
         let liFormatter = LiFormatter(placeholderAttributes: typingAttributes)
-        toggle(formatter: liFormatter, atRange: range)
+        let isOlTagPresent = formatter.present(in: storage, at: range)
+        let isLiTagPresent = liFormatter.present(in: storage, at: range)
 
+        if isOlTagPresent != isLiTagPresent {
+            toggle(formatter: liFormatter, atRange: range)
+        }
         forceRedrawCursorAfterDelay()
     }
 
@@ -1030,8 +1130,12 @@ open class TextView: UITextView {
         toggle(formatter: formatter, atRange: range)
 
         let liFormatter = LiFormatter(placeholderAttributes: typingAttributes)
-        toggle(formatter: liFormatter, atRange: range)
-        
+        let isOlTagPresent = formatter.present(in: storage, at: range)
+        let isLiTagPresent = liFormatter.present(in: storage, at: range)
+
+        if isOlTagPresent != isLiTagPresent {
+            toggle(formatter: liFormatter, atRange: range)
+        }
         forceRedrawCursorAfterDelay()
     }
 
@@ -1044,6 +1148,16 @@ open class TextView: UITextView {
         let formatter = HeaderFormatter(headerLevel: headerType)
         toggle(formatter: formatter, atRange: range)
         forceRedrawCursorAfterDelay()
+    }
+
+    /// Adds or removes a mark style from the specified range.
+    ///
+    /// - Parameter range: The NSRange to edit.
+    ///
+    open func toggleMark(range: NSRange) {
+        let formatter = MarkFormatter()
+        formatter.placeholderAttributes = self.defaultAttributes
+        toggle(formatter: formatter, atRange: range)
     }
 
     /// Replaces with an horizontal ruler on the specified range
@@ -1384,6 +1498,14 @@ open class TextView: UITextView {
     open func removeMediaAttachments() {
         storage.removeMediaAttachments()
         notifyTextViewDidChange()
+    }
+
+    /// Forces  a Refresh of all media attachment in the text view
+    open func refreshMediaAttachments() {
+        storage.enumerateAttachmentsOfType(MediaAttachment.self) { (attachment, range, _) in
+            attachment.refresh()
+            self.refresh(attachment, overlayUpdateOnly: false)
+        }
     }
 
     /// Replaces a Video attachment at the specified range

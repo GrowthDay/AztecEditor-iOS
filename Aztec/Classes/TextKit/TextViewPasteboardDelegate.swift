@@ -28,6 +28,9 @@ open class AztecTextViewPasteboardDelegate: TextViewPasteboardDelegate {
         let selectedRange = textView.selectedRange
 
         if selectedRange.length == 0 {
+            guard textView.shouldChangeText(in: selectedRange, with: url.absoluteString) else {
+                return true
+            }
             textView.setLink(url, title:url.absoluteString, inRange: selectedRange)
         } else {
             textView.setLink(url, inRange: selectedRange)
@@ -45,6 +48,10 @@ open class AztecTextViewPasteboardDelegate: TextViewPasteboardDelegate {
             textView.storage.htmlConverter.isSupported(html) else {
                 return false
         }
+        let string = textView.storage.htmlConverter.attributedString(from: html)
+        guard textView.shouldChangeText(in: textView.selectedRange, with: string.string) else {
+            return true
+        }
 
         textView.replace(textView.selectedRange, withHTML: html)
         return true
@@ -60,6 +67,11 @@ open class AztecTextViewPasteboardDelegate: TextViewPasteboardDelegate {
         }
         string.loadLazyAttachments()
         let selectedRange = textView.selectedRange
+
+        guard textView.shouldChangeText(in: selectedRange, with: string.string) else {
+            return true
+        }
+
         let storage = textView.storage
 
         let finalRange = NSRange(location: selectedRange.location, length: string.length)
@@ -81,11 +93,9 @@ open class AztecTextViewPasteboardDelegate: TextViewPasteboardDelegate {
     }
 
     private func fixColors(in string: NSAttributedString, using baseColor: UIColor?) -> NSAttributedString {
-#if XCODE11
         guard #available(iOS 13.0, *) else {
             return string
         }
-        
         let colorToUse = baseColor ?? UIColor.label
 
         let newString = NSMutableAttributedString(attributedString: string)
@@ -95,9 +105,6 @@ open class AztecTextViewPasteboardDelegate: TextViewPasteboardDelegate {
             }
         }
         return newString
-#else
-        return string
-#endif
     }
 
     /// Tries to paste raw text from the clipboard, replacing the selected range.
@@ -110,6 +117,11 @@ open class AztecTextViewPasteboardDelegate: TextViewPasteboardDelegate {
         }
 
         let selectedRange = textView.selectedRange
+
+        guard textView.shouldChangeText(in: selectedRange, with: string.string) else {
+            return true
+        }
+
         let finalRange = NSRange(location: selectedRange.location, length: string.length)
         let originalText = textView.attributedText.attributedSubstring(from: selectedRange)
 
@@ -138,4 +150,5 @@ open class AztecTextViewPasteboardDelegate: TextViewPasteboardDelegate {
 
         return true
     }
+
 }

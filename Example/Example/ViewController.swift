@@ -19,6 +19,9 @@ class ViewController: UITableViewController
                 DemoRow(title: "Captions Demo", action: { self.showEditorDemo(filename: "captions") }),
                 DemoRow(title: "Image Overlays", action: { self.showEditorDemo(filename: "imagesOverlays") }),
                 DemoRow(title: "Video Demo", action: { self.showEditorDemo(filename: "video", wordPressMode: false) }),
+                DemoRow(title: "Failed Media", action: { self.showEditorDemo(filename: "failedMedia") }),
+                DemoRow(title: "Big Lists", action: { self.showEditorDemo(filename: "bigLists") }),
+                DemoRow(title: "Underline NBSP", action: { self.showEditorDemo(filename: "underline")}),
                 DemoRow(title: "Empty Demo", action: { self.showEditorDemo() })
                 ]
             ),

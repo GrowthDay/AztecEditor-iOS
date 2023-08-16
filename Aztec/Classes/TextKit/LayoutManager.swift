@@ -8,8 +8,8 @@ import QuartzCore
 class LayoutManager: NSLayoutManager {
 
     /// Blockquote's Left Border Color
-    ///
-    var blockquoteBorderColor: UIColor? = UIColor(red: 0.52, green: 0.65, blue: 0.73, alpha: 1.0)
+    /// Set the array with how many colors you like, they appear in the order they are set in the array.
+    var blockquoteBorderColors = [UIColor.systemGray]
 
     /// Blockquote's Background Color
     ///
@@ -62,17 +62,29 @@ private extension LayoutManager {
             guard let paragraphStyle = object as? ParagraphStyle, !paragraphStyle.blockquotes.isEmpty else {
                 return
             }
-
-            let blockquoteIndent = paragraphStyle.blockquoteIndent
+                        
             let blockquoteGlyphRange = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
 
             enumerateLineFragments(forGlyphRange: blockquoteGlyphRange) { (rect, usedRect, textContainer, glyphRange, stop) in
+                
+                let startIndent = paragraphStyle.indentToFirst(Blockquote.self) - Metrics.listTextIndentation
+
                 let lineRange = self.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
                 let lineCharacters = textStorage.attributedSubstring(from: lineRange).string
                 let lineEndsParagraph = lineCharacters.isEndOfParagraph(before: lineCharacters.endIndex)
-                let blockquoteRect = self.blockquoteRect(origin: origin, lineRect: rect, blockquoteIndent: blockquoteIndent, lineEndsParagraph: lineEndsParagraph)
+                let blockquoteRect = self.blockquoteRect(origin: origin, lineRect: rect, blockquoteIndent: startIndent, lineEndsParagraph: lineEndsParagraph)
 
-                self.drawBlockquote(in: blockquoteRect.integral, with: context)
+                self.drawBlockquoteBackground(in: blockquoteRect.integral, with: context)
+                
+                let nestDepth = paragraphStyle.blockquoteNestDepth
+                for index in 0...nestDepth {
+                    let indent = paragraphStyle.indent(to: index, of: Blockquote.self) - Metrics.listTextIndentation
+
+                    let nestRect = self.blockquoteRect(origin: origin, lineRect: rect, blockquoteIndent: indent, lineEndsParagraph: lineEndsParagraph)
+
+                    self.drawBlockquoteBorder(in: nestRect.integral, with: context, at: index)
+                }
+            
             }
         }
 
@@ -87,10 +99,11 @@ private extension LayoutManager {
                 return
         }
 
-        let extraIndent = paragraphStyle.blockquoteIndent
+        let extraIndent = paragraphStyle.indentToLast(Blockquote.self)
         let extraRect = blockquoteRect(origin: origin, lineRect: extraLineFragmentRect, blockquoteIndent: extraIndent, lineEndsParagraph: false)
 
-        drawBlockquote(in: extraRect.integral, with: context)
+        drawBlockquoteBackground(in: extraRect.integral, with: context)
+        drawBlockquoteBorder(in: extraRect.integral, with: context, at: 0)
     }
 
 
@@ -107,11 +120,7 @@ private extension LayoutManager {
     private func blockquoteRect(origin: CGPoint, lineRect: CGRect, blockquoteIndent: CGFloat, lineEndsParagraph: Bool) -> CGRect {
         var blockquoteRect = lineRect.offsetBy(dx: origin.x, dy: origin.y)
         
-        guard blockquoteIndent != 0 else {
-            return blockquoteRect
-        }
-
-        let paddingWidth = Metrics.listTextIndentation * 0.5 + blockquoteIndent
+        let paddingWidth = blockquoteIndent
         blockquoteRect.origin.x += paddingWidth
         blockquoteRect.size.width -= paddingWidth
 
@@ -122,21 +131,28 @@ private extension LayoutManager {
 
         return blockquoteRect
     }
+    
+    private func drawBlockquoteBorder(in rect: CGRect, with context: CGContext, at depth: Int) {
+        let quoteCount = blockquoteBorderColors.count
+        let index = min(depth, quoteCount-1)
+        
+        guard quoteCount > 0 && index < quoteCount else {
+            return            
+        }
+        
+        let borderColor = blockquoteBorderColors[index]
+        let borderRect = CGRect(origin: rect.origin, size: CGSize(width: blockquoteBorderWidth, height: rect.height))
+        borderColor.setFill()
+        context.fill(borderRect)
+    }
 
     /// Draws a single Blockquote Line Fragment, in the specified Rectangle, using a given Graphics Context.
     ///
-    private func drawBlockquote(in rect: CGRect, with context: CGContext) {
-        if let blockquoteBackgroundColor = blockquoteBackgroundColor {
-            blockquoteBackgroundColor.setFill()
-            context.fill(rect)
-
-        }
-
-        if let blockquoteBorderColor = blockquoteBorderColor {
-            let borderRect = CGRect(origin: rect.origin, size: CGSize(width: blockquoteBorderWidth, height: rect.height))
-            blockquoteBorderColor.setFill()
-            context.fill(borderRect)
-        }
+    private func drawBlockquoteBackground(in rect: CGRect, with context: CGContext) {
+        guard let color = blockquoteBackgroundColor else {return}
+        
+        color.setFill()
+        context.fill(rect)
     }
 }
 
@@ -185,7 +201,6 @@ private extension LayoutManager {
     }
 }
 
-
 // MARK: - Lists Helpers
 //
 private extension LayoutManager {
@@ -207,7 +222,7 @@ private extension LayoutManager {
             else {
                 return
             }
-
+            let attributes = textStorage.attributes(at: enclosingRange.location, effectiveRange: nil)
             let glyphRange = self.glyphRange(forCharacterRange: enclosingRange, actualCharacterRange: nil)
             let markerRect = rectForItem(range: glyphRange, origin: origin, paragraphStyle: paragraphStyle)
             var markerNumber = textStorage.itemNumber(in: list, at: enclosingRange.location)
@@ -219,8 +234,8 @@ private extension LayoutManager {
                 }
             }
             markerNumber += start
-            
-            drawItem(number: markerNumber, in: markerRect, from: list, using: paragraphStyle, at: enclosingRange.location)
+            let markerString = list.style.markerText(forItemNumber: markerNumber)
+            drawItem(markerString, in: markerRect, styled: attributes, at: enclosingRange.location)
         }
     }
 
@@ -257,31 +272,36 @@ private extension LayoutManager {
     /// Draws the specified List Item Number, at a given location.
     ///
     /// - Parameters:
-    ///     - number: Marker Number of the item to be drawn
+    ///     - markerText: Marker String of the item to be drawn
     ///     - rect: Visible Rect in which the Marker should be rendered
-    ///     - list: Associated TextList
-    ///     - style: ParagraphStyle associated to the list
+    ///     - styled: Paragraph attributes associated to the list
     ///     - location: Text Location that should get the marker rendered.
     ///
-    private func drawItem(number: Int, in rect: CGRect, from list: TextList, using style: ParagraphStyle, at location: Int) {
-        guard let textStorage = textStorage else {
+    private func drawItem(_ markerText: String, in rect: CGRect, styled paragraphAttributes: [NSAttributedString.Key: Any], at location: Int) {
+        guard let style = paragraphAttributes[.paragraphStyle] as? ParagraphStyle else {
             return
         }
-
-        let paragraphAttributes = textStorage.attributes(at: location, effectiveRange: nil)
         let markerAttributes = markerAttributesBasedOnParagraph(attributes: paragraphAttributes)
-
-        let markerPlain = list.style.markerText(forItemNumber: number)
-        let markerText = NSAttributedString(string: markerPlain, attributes: markerAttributes)
+        let markerAttributedText = NSAttributedString(string: markerText, attributes: markerAttributes)
 
         var yOffset = CGFloat(0)
+        var xOffset = CGFloat(0)
+        let indentWidth = style.indentToLast(TextList.self)
+        let markerWidth = markerAttributedText.size().width * 1.5
 
         if location > 0 {
             yOffset += style.paragraphSpacingBefore
         }
+        // If the marker width is larger than the indent available let's offset the area to draw to the left
+        if markerWidth > indentWidth {
+            xOffset = indentWidth - markerWidth
+        }
 
-        let markerRect = rect.offsetBy(dx: 0, dy: yOffset)
-        markerText.draw(in: markerRect)
+        var markerRect = rect.offsetBy(dx: xOffset, dy: yOffset)
+
+        markerRect.size.width = max(indentWidth, markerWidth)
+
+        markerAttributedText.draw(in: markerRect)
     }
 
 
@@ -289,10 +309,7 @@ private extension LayoutManager {
     ///
     private func markerAttributesBasedOnParagraph(attributes: [NSAttributedString.Key: Any]) -> [NSAttributedString.Key: Any] {
         var resultAttributes = attributes
-        var indent: CGFloat = 0
-        if let style = attributes[.paragraphStyle] as? ParagraphStyle {
-            indent = style.listIndent + Metrics.listTextIndentation - (Metrics.listTextIndentation / 4)
-        }
+        let indent: CGFloat = CGFloat(Metrics.tabStepInterval)
 
         resultAttributes[.paragraphStyle] = markerParagraphStyle(indent: indent)
         resultAttributes.removeValue(forKey: .underlineStyle)
@@ -307,13 +324,14 @@ private extension LayoutManager {
     }
 
 
-    /// Returns the Marker Paratraph Attributes
+    /// Returns the Marker Paragraph Attributes
     ///
     private func markerParagraphStyle(indent: CGFloat) -> NSParagraphStyle {
-        let tabStop = NSTextTab(textAlignment: .right, location: indent, options: [:])
+
         let paragraphStyle = NSMutableParagraphStyle()
-        
-        paragraphStyle.tabStops = [tabStop]
+        paragraphStyle.alignment = .right
+        paragraphStyle.tailIndent = -indent
+        paragraphStyle.lineBreakMode = .byClipping
 
         return paragraphStyle
     }
@@ -341,3 +359,21 @@ private extension LayoutManager {
         }
     }
 }
+
+extension LayoutManager {
+
+    override func underlineGlyphRange(_ glyphRange: NSRange, underlineType underlineVal: NSUnderlineStyle, lineFragmentRect lineRect: CGRect, lineFragmentGlyphRange lineGlyphRange: NSRange, containerOrigin: CGPoint) {
+        guard let textStorage = textStorage else {
+            return
+        }
+        let underlinedString = textStorage.attributedSubstring(from: glyphRange).string
+        var updatedGlyphRange = glyphRange
+        if glyphRange.endLocation == lineGlyphRange.endLocation,
+            underlinedString.hasSuffix(String.init(.paragraphSeparator)) || underlinedString.hasSuffix(String.init(.lineSeparator)) || underlinedString.hasSuffix(String.init(.carriageReturn)) || underlinedString.hasSuffix(String.init(.lineFeed))
+        {
+            updatedGlyphRange = NSRange(location: glyphRange.location, length: glyphRange.length - 1)
+        }
+        drawUnderline(forGlyphRange: updatedGlyphRange, underlineType: underlineVal, baselineOffset: 0, lineFragmentRect: lineRect, lineFragmentGlyphRange: lineGlyphRange, containerOrigin: containerOrigin)
+    }
+}
+

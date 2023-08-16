@@ -11,12 +11,12 @@ class GenericElementConverter: ElementConverter {
     /// At some point we should modify how the conversion works, so that any supported element never goes through this
     /// converter at all, and this converter is turned into an `UnsupportedElementConverter()` exclusively.
     ///
-    private static let supportedElements: [Element] = [.a, .aztecRootNode, .b, .br, .blockquote, .del, .div, .em, .figure, .figcaption, .h1, .h2, .h3, .h4, .h5, .h6, .hr, .i, .img, .li, .ol, .p, .pre, .s, .span, .strike, .strong, .u, .ul, .video, .code]
+    private static let supportedElements: [Element] = [.a, .aztecRootNode, .b, .br, .blockquote, .del, .div, .em, .figure, .figcaption, .h1, .h2, .h3, .h4, .h5, .h6, .hr, .i, .img, .li, .ol, .p, .pre, .s, .span, .strike, .strong, .u, .ul, .video, .code, .sup, .sub, .mark]
     
     // MARK: - Built-in formatter instances
     
-    lazy var blockquoteFormatter = BlockquoteFormatter()
-    lazy var boldFormatter = BoldFormatter()
+    lazy var blockquoteFormatter = BlockquoteFormatter(increaseDepth: true)
+    lazy var boldFormatter = Configuration.defaultBoldFormatter
     lazy var divFormatter = HTMLDivFormatter()
     lazy var h1Formatter = HeaderFormatter(headerLevel: .h1)
     lazy var h2Formatter = HeaderFormatter(headerLevel: .h2)
@@ -34,6 +34,8 @@ class GenericElementConverter: ElementConverter {
     lazy var unorderedListFormatter = TextListFormatter(style: .unordered, increaseDepth: true)
     lazy var codeFormatter = CodeFormatter()
     lazy var liFormatter = LiFormatter()
+    lazy var superscriptFormatter = SuperscriptFormatter()
+    lazy var subscriptFormatter = SubscriptFormatter()
     
     public lazy var elementFormattersMap: [Element: AttributeFormatter] = {
         return [
@@ -55,7 +57,9 @@ class GenericElementConverter: ElementConverter {
             .p: self.paragraphFormatter,
             .pre: self.preFormatter,
             .code: self.codeFormatter,
-            .li: self.liFormatter
+            .li: self.liFormatter,
+            .sup: self.superscriptFormatter,
+            .sub: self.subscriptFormatter,
         ]
     }()
     

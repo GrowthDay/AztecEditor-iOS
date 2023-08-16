@@ -1,16 +1,11 @@
-import AVFoundation
-import AVKit
 import Aztec
 import Foundation
-import Gridicons
 import MobileCoreServices
 import Photos
 import UIKit
 import WordPressEditor
 
-class EditorDemoController: UIViewController {
-
-    fileprivate var mediaErrorMode = false
+class EditorDemoController: UIViewController {    
 
     fileprivate(set) lazy var formatBar: Aztec.FormatBar = {
         return self.createToolbar()
@@ -27,6 +22,14 @@ class EditorDemoController: UIViewController {
             return editorView.htmlTextView
         }
     }
+
+    fileprivate(set) lazy var mediaInserter: MediaInserter = {
+        return MediaInserter(textView: self.richTextView, attachmentTextAttributes: Constants.mediaMessageAttributes)
+    }()
+
+    fileprivate(set) lazy var textViewAttachmentDelegate: TextViewAttachmentDelegate = {
+        return TextViewAttachmentDelegateProvider(baseController: self, attachmentTextAttributes: Constants.mediaMessageAttributes)
+    }()
     
     fileprivate(set) lazy var editorView: Aztec.EditorView = {
         let defaultHTMLFont: UIFont
@@ -56,7 +59,7 @@ class EditorDemoController: UIViewController {
         
         textView.delegate = self
         textView.formattingDelegate = self
-        textView.textAttachmentDelegate = self
+        textView.textAttachmentDelegate = self.textViewAttachmentDelegate
         textView.accessibilityIdentifier = "richContentView"
         textView.clipsToBounds = false
         textView.smartDashesType = .no
@@ -123,9 +126,7 @@ class EditorDemoController: UIViewController {
         separatorView.translatesAutoresizingMaskIntoConstraints = false
 
         return separatorView
-    }()
-
-    fileprivate var currentSelectedAttachment: MediaAttachment?
+    }()    
 
     let sampleHTML: String?
     let wordPressMode: Bool
@@ -171,7 +172,7 @@ class EditorDemoController: UIViewController {
         view.addSubview(titleTextView)
         view.addSubview(titlePlaceholderLabel)
         view.addSubview(separatorView)
-        Aztec.Metrics.listTextIndentation = 24
+
         editorView.richTextView.textContainer.lineFragmentPadding = 0
         // color setup
         if #available(iOS 13.0, *) {
@@ -181,7 +182,7 @@ class EditorDemoController: UIViewController {
             editorView.richTextView.textColor = UIColor.label
             editorView.richTextView.blockquoteBackgroundColor = UIColor.secondarySystemBackground
             editorView.richTextView.preBackgroundColor = UIColor.secondarySystemBackground
-            editorView.richTextView.blockquoteBorderColor = UIColor.secondarySystemFill
+            editorView.richTextView.blockquoteBorderColors = [.secondarySystemFill, .systemTeal, .systemBlue]
             var attributes = editorView.richTextView.linkTextAttributes
             attributes?[.foregroundColor] =  UIColor.link
         } else {
@@ -451,19 +452,19 @@ class EditorDemoController: UIViewController {
         }
         
         if richTextView.isFirstResponder {
-            return [ UIKeyCommand(input:"B", modifierFlags: .command, action:#selector(toggleBold), discoverabilityTitle:NSLocalizedString("Bold", comment: "Discoverability title for bold formatting keyboard shortcut.")),
-                     UIKeyCommand(input:"I", modifierFlags: .command, action:#selector(toggleItalic), discoverabilityTitle:NSLocalizedString("Italic", comment: "Discoverability title for italic formatting keyboard shortcut.")),
-                     UIKeyCommand(input:"S", modifierFlags: [.command], action:#selector(toggleStrikethrough), discoverabilityTitle: NSLocalizedString("Strikethrough", comment:"Discoverability title for strikethrough formatting keyboard shortcut.")),
-                     UIKeyCommand(input:"U", modifierFlags: .command, action:#selector(EditorDemoController.toggleUnderline(_:)), discoverabilityTitle: NSLocalizedString("Underline", comment:"Discoverability title for underline formatting keyboard shortcut.")),
-                     UIKeyCommand(input:"Q", modifierFlags:[.command,.alternate], action: #selector(toggleBlockquote), discoverabilityTitle: NSLocalizedString("Block Quote", comment: "Discoverability title for block quote keyboard shortcut.")),
-                     UIKeyCommand(input:"K", modifierFlags:.command, action:#selector(toggleLink), discoverabilityTitle: NSLocalizedString("Insert Link", comment: "Discoverability title for insert link keyboard shortcut.")),
-                     UIKeyCommand(input:"M", modifierFlags:[.command,.alternate], action:#selector(showImagePicker), discoverabilityTitle: NSLocalizedString("Insert Media", comment: "Discoverability title for insert media keyboard shortcut.")),
-                     UIKeyCommand(input:"U", modifierFlags:[.command, .alternate], action:#selector(toggleUnorderedList), discoverabilityTitle:NSLocalizedString("Bullet List", comment: "Discoverability title for bullet list keyboard shortcut.")),
-                     UIKeyCommand(input:"O", modifierFlags:[.command, .alternate], action:#selector(toggleOrderedList), discoverabilityTitle:NSLocalizedString("Numbered List", comment:"Discoverability title for numbered list keyboard shortcut.")),
-                     UIKeyCommand(input:"H", modifierFlags:[.command, .shift], action:#selector(toggleEditingMode), discoverabilityTitle:NSLocalizedString("Toggle HTML Source ", comment: "Discoverability title for HTML keyboard shortcut."))
+            return [ UIKeyCommand(title: NSLocalizedString("Bold", comment: "Discoverability title for bold formatting keyboard shortcut."), action:#selector(toggleBold), input:"B", modifierFlags: .command, propertyList: nil, alternates: []),
+                     UIKeyCommand(title:NSLocalizedString("Italic", comment: "Discoverability title for italic formatting keyboard shortcut."), action:#selector(toggleItalic), input:"I", modifierFlags: .command ),
+                     UIKeyCommand(title: NSLocalizedString("Strikethrough", comment:"Discoverability title for strikethrough formatting keyboard shortcut."), action:#selector(toggleStrikethrough), input:"S", modifierFlags: [.command]),
+                     UIKeyCommand(title: NSLocalizedString("Underline", comment:"Discoverability title for underline formatting keyboard shortcut."), action:#selector(EditorDemoController.toggleUnderline(_:)), input:"U", modifierFlags: .command ),
+                     UIKeyCommand(title: NSLocalizedString("Block Quote", comment: "Discoverability title for block quote keyboard shortcut."), action: #selector(toggleBlockquote), input:"Q", modifierFlags:[.command,.alternate]),
+                     UIKeyCommand(title: NSLocalizedString("Insert Link", comment: "Discoverability title for insert link keyboard shortcut."), action:#selector(toggleLink), input:"K", modifierFlags:.command),
+                     UIKeyCommand(title: NSLocalizedString("Insert Media", comment: "Discoverability title for insert media keyboard shortcut."), action:#selector(showImagePicker), input:"M", modifierFlags:[.command,.alternate]),
+                     UIKeyCommand(title:NSLocalizedString("Bullet List", comment: "Discoverability title for bullet list keyboard shortcut."), action:#selector(toggleUnorderedList), input:"U", modifierFlags:[.command, .alternate]),
+                     UIKeyCommand(title:NSLocalizedString("Numbered List", comment:"Discoverability title for numbered list keyboard shortcut."), action:#selector(toggleOrderedList), input:"O", modifierFlags:[.command, .alternate]),
+                     UIKeyCommand(title:NSLocalizedString("Toggle HTML Source ", comment: "Discoverability title for HTML keyboard shortcut."), action:#selector(toggleEditingMode), input:"H", modifierFlags:[.command, .shift])
             ]
         } else if htmlTextView.isFirstResponder {
-            return [UIKeyCommand(input:"H", modifierFlags:[.command, .shift], action:#selector(toggleEditingMode), discoverabilityTitle:NSLocalizedString("Toggle HTML Source ", comment: "Discoverability title for HTML keyboard shortcut."))
+            return [UIKeyCommand(title:NSLocalizedString("Toggle HTML Source ", comment: "Discoverability title for HTML keyboard shortcut."), action:#selector(toggleEditingMode), input:"H", modifierFlags:[.command, .shift])
             ]
         }
         return []
@@ -531,6 +532,10 @@ extension EditorDemoController : UITextViewDelegate {
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         updateTitlePosition()
+    }
+
+    func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        return true
     }
 }
 
@@ -992,7 +997,7 @@ extension EditorDemoController {
             toolbar.dividerTintColor = .gray
         }
 
-        toolbar.overflowToggleIcon = Gridicon.iconOfType(.ellipsis)
+        toolbar.overflowToggleIcon = UIImage.init(systemName: "ellipsis")!
         toolbar.frame = CGRect(x: 0, y: 0, width: view.frame.width, height: 44.0)
         toolbar.autoresizingMask = [ .flexibleHeight ]
         toolbar.formatter = self
@@ -1055,124 +1060,6 @@ extension EditorDemoController {
 
 }
 
-
-extension EditorDemoController: TextViewAttachmentDelegate {
-
-    func textView(_ textView: TextView, attachment: NSTextAttachment, imageAt url: URL, onSuccess success: @escaping (UIImage) -> Void, onFailure failure: @escaping () -> Void) {
-
-        switch attachment {
-        case let videoAttachment as VideoAttachment:
-            guard let posterURL = videoAttachment.posterURL else {
-                // Let's get a frame from the video directly
-                if let videoURL = videoAttachment.mediaURL {
-                    exportPreviewImageForVideo(atURL: videoURL, onCompletion: success, onError: failure)
-                } else {
-                    exportPreviewImageForVideo(atURL: url, onCompletion: success, onError: failure)
-                }
-                return
-            }
-            downloadImage(from: posterURL, success: success, onFailure: failure)
-        case let imageAttachment as ImageAttachment:
-            if let imageURL = imageAttachment.url {
-                downloadImage(from: imageURL, success: success, onFailure: failure)
-            }
-        default:
-            failure()
-        }
-    }
-
-    func textView(_ textView: TextView, placeholderFor attachment: NSTextAttachment) -> UIImage {
-        return placeholderImage(for: attachment)
-    }
-
-    func placeholderImage(for attachment: NSTextAttachment) -> UIImage {
-        let imageSize = CGSize(width:64, height:64)
-        let placeholderImage: UIImage
-        switch attachment {
-        case _ as ImageAttachment:
-            placeholderImage = Gridicon.iconOfType(.image, withSize: imageSize)
-        case _ as VideoAttachment:
-            placeholderImage = Gridicon.iconOfType(.video, withSize: imageSize)
-        default:
-            placeholderImage = Gridicon.iconOfType(.attachment, withSize: imageSize)
-        }
-
-        return placeholderImage
-    }
-
-    func textView(_ textView: TextView, urlFor imageAttachment: ImageAttachment) -> URL? {
-        guard let image = imageAttachment.image else {
-            return nil
-        }
-
-        // TODO: start fake upload process
-        return saveToDisk(image: image)
-    }
-
-    func textView(_ textView: TextView, deletedAttachment attachment: MediaAttachment) {
-        print("Attachment \(attachment.identifier) removed.\n")
-    }
-
-    func textView(_ textView: TextView, selected attachment: NSTextAttachment, atPosition position: CGPoint) {
-        switch attachment {
-        case let attachment as HTMLAttachment:
-            displayUnknownHtmlEditor(for: attachment)
-        case let attachment as MediaAttachment:
-            selected(textAttachment: attachment, atPosition: position)
-        default:
-            break
-        }
-    }
-
-    func textView(_ textView: TextView, deselected attachment: NSTextAttachment, atPosition position: CGPoint) {
-        deselected(textAttachment: attachment, atPosition: position)
-    }
-
-    fileprivate func resetMediaAttachmentOverlay(_ mediaAttachment: MediaAttachment) {
-        mediaAttachment.overlayImage = nil
-        mediaAttachment.message = nil
-    }
-
-    func selected(textAttachment attachment: MediaAttachment, atPosition position: CGPoint) {
-        if (currentSelectedAttachment == attachment) {
-            displayActions(forAttachment: attachment, position: position)
-        } else {
-            if let selectedAttachment = currentSelectedAttachment {
-                resetMediaAttachmentOverlay(selectedAttachment)
-                richTextView.refresh(selectedAttachment)
-            }
-
-            // and mark the newly tapped attachment
-            if attachment.message == nil {
-                let message = NSLocalizedString("Options", comment: "Options to show when tapping on a media object on the post/page editor.")
-                attachment.message = NSAttributedString(string: message, attributes: mediaMessageAttributes)
-            }
-            attachment.overlayImage = Gridicon.iconOfType(.pencil, withSize: CGSize(width: 32.0, height: 32.0)).withRenderingMode(.alwaysTemplate)
-            richTextView.refresh(attachment)
-            currentSelectedAttachment = attachment
-        }
-    }
-
-    func deselected(textAttachment attachment: NSTextAttachment, atPosition position: CGPoint) {
-        currentSelectedAttachment = nil
-        if let mediaAttachment = attachment as? MediaAttachment {
-            resetMediaAttachmentOverlay(mediaAttachment)
-            richTextView.refresh(mediaAttachment)
-        }
-    }
-
-    func displayVideoPlayer(for videoURL: URL) {
-        let asset = AVURLAsset(url: videoURL)
-        let controller = AVPlayerViewController()
-        let playerItem = AVPlayerItem(asset: asset)
-        let player = AVPlayer(playerItem: playerItem)
-        controller.showsPlaybackControls = true
-        controller.player = player
-        player.play()
-        present(controller, animated:true, completion: nil)
-    }
-}
-
 extension EditorDemoController: UINavigationControllerDelegate
 {
 }
@@ -1200,321 +1087,63 @@ let info = convertFromUIImagePickerControllerInfoKeyDictionary(info)
             }
 
             // Insert Image + Reclaim Focus
-            insertImage(image)
+            mediaInserter.insertImage(image)
 
         case typeMovie:
             guard let videoURL = info[convertFromUIImagePickerControllerInfoKey(UIImagePickerController.InfoKey.mediaURL)] as? URL else {
                 return
             }
-            insertVideo(videoURL)
+            mediaInserter.insertVideo(videoURL)
         default:
             print("Media type not supported: \(mediaType)")
         }
     }
 }
 
-
-// MARK: - Unknown HTML
+// MARK: - Constants
 //
-private extension EditorDemoController {
-
-    func displayUnknownHtmlEditor(for attachment: HTMLAttachment) {
-        let targetVC = UnknownEditorViewController(attachment: attachment)
-        targetVC.onDidSave = { [weak self] html in
-            self?.richTextView.edit(attachment) { updated in
-                updated.rawHTML = html
-            }
-
-            self?.dismiss(animated: true, completion: nil)
-        }
-
-        targetVC.onDidCancel = { [weak self] in
-            self?.dismiss(animated: true, completion: nil)
-        }
-
-        let navigationController = UINavigationController(rootViewController: targetVC)
-        displayAsPopover(viewController: navigationController)
-    }
-
-    func displayAsPopover(viewController: UIViewController) {
-        viewController.modalPresentationStyle = .popover
-        viewController.preferredContentSize = view.frame.size
-
-        let presentationController = viewController.popoverPresentationController
-        presentationController?.sourceView = view
-        presentationController?.delegate = self
-
-        present(viewController, animated: true, completion: nil)
-    }
-}
-
-
-// MARK: - UIPopoverPresentationControllerDelegate
-//
-extension EditorDemoController: UIPopoverPresentationControllerDelegate {
-
-    func adaptivePresentationStyle(for controller: UIPresentationController, traitCollection: UITraitCollection) -> UIModalPresentationStyle {
-        return .none
-    }
-
-    func popoverPresentationControllerDidDismissPopover(_ popoverPresentationController: UIPopoverPresentationController) {
-    }
-}
-
-// MARK: - Media fetch methods
-//
-private extension EditorDemoController {
-
-    func exportPreviewImageForVideo(atURL url: URL, onCompletion: @escaping (UIImage) -> (), onError: @escaping () -> ()) {
-        DispatchQueue.global(qos: .background).async {
-            let asset = AVURLAsset(url: url)
-            guard asset.isExportable else {
-                onError()
-                return
-            }
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: CMTimeMake(value: 2, timescale: 1))],
-                                                     completionHandler: { (time, cgImage, actualTime, result, error) in
-                                                        guard let cgImage = cgImage else {
-                                                            DispatchQueue.main.async {
-                                                                onError()
-                                                            }
-                                                            return
-                                                        }
-                                                        let image = UIImage(cgImage: cgImage)
-                                                        DispatchQueue.main.async {
-                                                            onCompletion(image)
-                                                        }
-            })
-        }
-    }
-
-    func downloadImage(from url: URL, success: @escaping (UIImage) -> Void, onFailure failure: @escaping () -> Void) {
-        let task = URLSession.shared.dataTask(with: url) { [weak self] (data, _, error) in
-            DispatchQueue.main.async {
-                guard self != nil else {
-                    return
-                }
-
-                guard error == nil, let data = data, let image = UIImage(data: data, scale: UIScreen.main.scale) else {
-                    failure()
-                    return
-                }
-
-                success(image)
-            }
-        }
-
-        task.resume()
-    }
-}
-// MARK: - Misc
-//
-private extension EditorDemoController
-{
-    func saveToDisk(image: UIImage) -> URL {
-        let fileName = "\(ProcessInfo.processInfo.globallyUniqueString)_file.jpg"
-
-        guard let data = image.jpegData(compressionQuality: 0.9) else {
-            fatalError("Could not conert image to JPEG.")
-        }
-
-        let fileURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(fileName)
-
-        guard (try? data.write(to: fileURL, options: [.atomic])) != nil else {
-            fatalError("Could not write the image to disk.")
-        }
-        
-        return fileURL
-    }
-    
-    func insertImage(_ image: UIImage) {
-        
-        let fileURL = saveToDisk(image: image)
-        
-        let attachment = richTextView.replaceWithImage(at: richTextView.selectedRange, sourceURL: fileURL, placeHolderImage: image)
-        attachment.size = .full
-        attachment.alignment = ImageAttachment.Alignment.none
-        if let attachmentRange = richTextView.textStorage.ranges(forAttachment: attachment).first {
-            richTextView.setLink(fileURL, inRange: attachmentRange)
-        }
-        let imageID = attachment.identifier
-        let progress = Progress(parent: nil, userInfo: [MediaProgressKey.mediaID: imageID])
-        progress.totalUnitCount = 100
-        
-        Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(EditorDemoController.timerFireMethod(_:)), userInfo: progress, repeats: true)
-    }
-
-    func insertVideo(_ videoURL: URL) {
-        let asset = AVURLAsset(url: videoURL, options: nil)
-        let imgGenerator = AVAssetImageGenerator(asset: asset)
-        imgGenerator.appliesPreferredTrackTransform = true
-        guard let cgImage = try? imgGenerator.copyCGImage(at: CMTimeMake(value: 0, timescale: 1), actualTime: nil) else {
-            return
-        }
-        let posterImage = UIImage(cgImage: cgImage)
-        let posterURL = saveToDisk(image: posterImage)
-        let attachment = richTextView.replaceWithVideo(at: richTextView.selectedRange, sourceURL: URL(string:"placeholder://")!, posterURL: posterURL, placeHolderImage: posterImage)
-        let mediaID = attachment.identifier
-        let progress = Progress(parent: nil, userInfo: [MediaProgressKey.mediaID: mediaID, MediaProgressKey.videoURL:videoURL])
-        progress.totalUnitCount = 100
-
-        Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(EditorDemoController.timerFireMethod(_:)), userInfo: progress, repeats: true)
-    }
-
-    @objc func timerFireMethod(_ timer: Timer) {
-        guard let progress = timer.userInfo as? Progress,
-              let imageId = progress.userInfo[MediaProgressKey.mediaID] as? String,
-              let attachment = richTextView.attachment(withId: imageId)
-        else {
-            timer.invalidate()
-            return
-        }        
-        progress.completedUnitCount += 1
-
-        attachment.progress = progress.fractionCompleted
-        if mediaErrorMode && progress.fractionCompleted >= 0.25 {
-            timer.invalidate()
-            let message = NSAttributedString(string: "Upload failed!", attributes: mediaMessageAttributes)
-            attachment.message = message
-            attachment.overlayImage = Gridicon.iconOfType(.refresh)
-        }
-        if progress.fractionCompleted >= 1 {
-            timer.invalidate()
-            attachment.progress = nil
-            if let videoAttachment = attachment as? VideoAttachment, let videoURL = progress.userInfo[MediaProgressKey.videoURL] as? URL {
-                videoAttachment.updateURL(videoURL)
-            }
-        }
-        richTextView.refresh(attachment, overlayUpdateOnly: true)
-    }
-
-    var mediaMessageAttributes: [NSAttributedString.Key: Any] {
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .center
-
-        let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 15, weight: .semibold),
-                                                        .paragraphStyle: paragraphStyle,
-                                                        .foregroundColor: UIColor.white]
-        return attributes
-    }
-
-    func displayActions(forAttachment attachment: MediaAttachment, position: CGPoint) {
-        let mediaID = attachment.identifier
-        let title: String = NSLocalizedString("Media Options", comment: "Title for action sheet with media options.")
-        let message: String? = nil
-        let alertController = UIAlertController(title: title, message:message, preferredStyle: .actionSheet)
-        let dismissAction = UIAlertAction(title: NSLocalizedString("Dismiss", comment: "User action to dismiss media options."),
-                                          style: .cancel,
-                                          handler: { [weak self] (action) in
-                                            self?.resetMediaAttachmentOverlay(attachment)
-                                            self?.richTextView.refresh(attachment)
-        }
-        )
-        alertController.addAction(dismissAction)
-
-        let removeAction = UIAlertAction(title: NSLocalizedString("Remove Media", comment: "User action to remove media."),
-                                         style: .destructive,
-                                         handler: { [weak self] (action) in
-                                            self?.richTextView.remove(attachmentID: mediaID)
-        })
-        alertController.addAction(removeAction)
-
-        if let imageAttachment = attachment as? ImageAttachment {
-            let detailsAction = UIAlertAction(title:NSLocalizedString("Media Details", comment: "User action to change media details."),
-                                              style: .default,
-                                              handler: { [weak self] (action) in
-                                                self?.displayDetailsForAttachment(imageAttachment, position: position)
-            })
-            alertController.addAction(detailsAction)
-        } else if let videoAttachment = attachment as? VideoAttachment, let videoURL = videoAttachment.mediaURL {
-            let detailsAction = UIAlertAction(title:NSLocalizedString("Play Video", comment: "User action to play video."),
-                                              style: .default,
-                                              handler: { [weak self] (action) in
-                                                self?.displayVideoPlayer(for: videoURL)
-            })
-            alertController.addAction(detailsAction)
-        }
-
-        alertController.title = title
-        alertController.message = message
-        alertController.popoverPresentationController?.sourceView = richTextView
-        alertController.popoverPresentationController?.sourceRect = CGRect(origin: position, size: CGSize(width: 1, height: 1))
-        alertController.popoverPresentationController?.permittedArrowDirections = .any
-        present(alertController, animated:true, completion: nil)
-    }
-
-    func displayDetailsForAttachment(_ attachment: ImageAttachment, position:CGPoint) {
-        
-        let caption = richTextView.caption(for: attachment)
-        let detailsViewController = AttachmentDetailsViewController.controller(for: attachment, with: caption)
-        
-        let linkInfo = richTextView.linkInfo(for: attachment)
-        let linkRange = linkInfo?.range
-        let linkUpdateRange = linkRange ?? richTextView.textStorage.ranges(forAttachment: attachment).first!
-        
-        if let linkURL = linkInfo?.url {
-            detailsViewController.linkURL = linkURL
-        }
-
-        detailsViewController.onUpdate = { [weak self] (alignment, size, srcURL, linkURL, alt, caption) in
-            guard let `self` = self else {
-                return
-            }
-
-            let attachment = self.richTextView.edit(attachment) { attachment in
-                if let alt = alt {
-                    attachment.extraAttributes["alt"] = .string(alt)
-                }
-
-                attachment.alignment = alignment
-                attachment.size = size
-                attachment.updateURL(srcURL)
-            }
-            
-            if let caption = caption, caption.length > 0 {
-                self.richTextView.replaceCaption(for: attachment, with: caption)
-            } else {
-                self.richTextView.removeCaption(for: attachment)
-            }
-            
-            if let newLinkURL = linkURL {
-                self.richTextView.setLink(newLinkURL, inRange: linkUpdateRange)
-            } else if linkURL != nil {
-                self.richTextView.removeLink(inRange: linkUpdateRange)
-            }
-        }
-        
-        let selectedRange = richTextView.selectedRange
-        
-        detailsViewController.onDismiss = { [unowned self] in            
-            self.richTextView.becomeFirstResponder()
-            self.richTextView.selectedRange = selectedRange
-        }
-
-        let navigationController = UINavigationController(rootViewController: detailsViewController)        
-        present(navigationController, animated: true, completion: nil)
-    }
-}
-
 
 extension EditorDemoController {
+
+    static var tintedMissingImage: UIImage = {
+        if #available(iOS 13.0, *) {
+            return UIImage.init(systemName: "photo")!.withTintColor(.label)
+        } else {
+            // Fallback on earlier versions
+            return UIImage.init(systemName: "photo")!
+        }
+    }()
 
     struct Constants {
         static let defaultContentFont   = UIFont.systemFont(ofSize: 14)
         static let defaultHtmlFont      = UIFont.systemFont(ofSize: 24)
-        static let defaultMissingImage  = Gridicon.iconOfType(.image)
+        static let defaultMissingImage  = tintedMissingImage
         static let formatBarIconSize    = CGSize(width: 20.0, height: 20.0)
         static let headers              = [Header.HeaderType.none, .h1, .h2, .h3, .h4, .h5, .h6]
         static let lists                = [TextList.Style.unordered, .ordered]        
         static let moreAttachmentText   = "more"
         static let titleInsets          = UIEdgeInsets(top: 5, left: 0, bottom: 5, right: 0)
-    }
+        static var mediaMessageAttributes: [NSAttributedString.Key: Any] {
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.alignment = .center
 
-    struct MediaProgressKey {
-        static let mediaID = ProgressUserInfoKey("mediaID")
-        static let videoURL = ProgressUserInfoKey("videoURL")
+            let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 15, weight: .semibold),
+                                                            .paragraphStyle: paragraphStyle,
+                                                            .foregroundColor: UIColor.white]
+            return attributes
+        }
+    }    
+}
+
+extension UIImage {
+
+    static func systemImage(_ name: String) -> UIImage {
+        guard let image = UIImage(systemName: name) else {
+            assertionFailure("Missing system image: \(name)")
+            return UIImage()
+        }
+
+        return image
     }
 }
 
@@ -1524,53 +1153,48 @@ extension FormattingIdentifier {
 
         switch(self) {
         case .media:
-            return gridicon(.addOutline)
+            return UIImage.systemImage("plus.circle")
         case .p:
-            return gridicon(.heading)
+            return UIImage.systemImage("textformat.size")
         case .bold:
-            return gridicon(.bold)
+            return UIImage.systemImage("bold")
         case .italic:
-            return gridicon(.italic)
+            return UIImage.systemImage("italic")
         case .underline:
-            return gridicon(.underline)
+            return UIImage.systemImage("underline")
         case .strikethrough:
-            return gridicon(.strikethrough)
+            return UIImage.systemImage("strikethrough")
         case .blockquote:
-            return gridicon(.quote)
+            return UIImage.systemImage("text.quote")
         case .orderedlist:
-            return gridicon(.listOrdered)
+            return UIImage.systemImage("list.number")
         case .unorderedlist:
-            return gridicon(.listUnordered)
+            return UIImage.systemImage("list.bullet")
         case .link:
-            return gridicon(.link)
+            return UIImage.systemImage("link")
         case .horizontalruler:
-            return gridicon(.minusSmall)
+            return UIImage.systemImage("minus")
         case .sourcecode:
-            return gridicon(.code)
+            return UIImage.systemImage("chevron.left.slash.chevron.right")
         case .more:
-            return gridicon(.readMore)
+            return UIImage.systemImage("textformat.abc.dottedunderline")
         case .header1:
-            return gridicon(.headingH1)
+            return UIImage.systemImage("textformat.size")
         case .header2:
-            return gridicon(.headingH2)
+            return UIImage.systemImage("textformat.size")
         case .header3:
-            return gridicon(.headingH3)
+            return UIImage.systemImage("textformat.size")
         case .header4:
-            return gridicon(.headingH4)
+            return UIImage.systemImage("textformat.size")
         case .header5:
-            return gridicon(.headingH5)
+            return UIImage.systemImage("textformat.size")
         case .header6:
-            return gridicon(.headingH6)
+            return UIImage.systemImage("textformat.size")
         case .code:
-            return gridicon(.posts)
+            return UIImage.systemImage("textbox")
         default:
-            return gridicon(.help)
+            return UIImage.systemImage("info")
         }
-    }
-
-    private func gridicon(_ gridiconType: GridiconType) -> UIImage {
-        let size = EditorDemoController.Constants.formatBarIconSize
-        return Gridicon.iconOfType(gridiconType, withSize: size)
     }
 
     var accessibilityIdentifier: String {
